@@ -14,10 +14,51 @@ from Crypto.Hash import SHA
 from communication import send, receive
 
 
+class CTFObject(object):
+    def __init__(self, name):
+        self.name = name
+        self.locked = (None, False)
+        self.notes = []
+        self.flag = ''
+        
+    def is_locked(self):
+        return self.locked[1]
+
+    def acquire(self, locker):
+        # Not locked yet, acquire it
+        if not is_locked(self):
+            self.locked[0] = locker
+            self.locked[1] = True
+            return '%s has been acquired by %s.' % (self.name, locker)
+
+        elif is_locked(self):
+            # Already locked
+            return '%s is already locked by %s.' % (self.name, self.locked[0])
+        else:
+            return 'Cannot lock %s. Object does not exist or contains an error.' % (self.name)
+
+    def release(self, requester):
+        # Locked, are you the person that locked it?
+        if is_locked(self) and requester == self.locked[0]:
+            # Unlock it
+            self.locked[0] = None
+            self.locked[1] = False
+            return '%s has been released by %s.' % (self.name, requester)
+        
+        elif is_locked(self) and requester != self.locked[0]:
+            # Locker and unlocker are not the same person
+            return 'Cannot unlock %s. Already locked by %s.' % (self.name, self.locked[0])
+            
+        else:
+            return 'Cannot unlock %s. This object is not locked or does not exist.' % (self.name)
+            
+
 class ChatServer(object):
 
     def __init__(self, address='127.0.0.1', port=3490):
         self.clients = 0
+
+        self.objects = {}
 
         # Client map
         self.clientmap = {}
@@ -79,6 +120,75 @@ class ChatServer(object):
 
         except IOError:
             return False
+
+    def print_help(self, s):
+        msg ='''
+Available commands:
+
+help:    Show this help message
+add:     Add an object named [name] to the session (add [name])
+list:    List all objects and their attributes
+
+'''
+        # Send help only to self
+        self.send_encrypted(s, msg, self.get_just_name(s))
+
+    def process(self, data, s):
+        if data[0] != '!': # No server-side commands
+            # Send as new client's message...
+            msg = '\n# [' + self.getname(s) + ']>> ' + data
+
+            # Send data to all except ourselves
+            for o in self.outputs:
+                if o != s:
+                    self.send_encrypted(o, msg, self.get_just_name(s))
+            return
+        
+        else:
+            # Server-side command
+            cmd = data[1:].split(' ')
+            if cmd[0].lower() == 'help':
+                self.print_help(s)
+                return
+
+            elif cmd[0].lower() == 'add':
+                if len(cmd) == 3: # Include verification
+                    if cmd[1] not in self.objects:
+                        # Add the object
+                        self.objects[cmd[1]] = CTFObject(cmd[1])
+                        return
+                        
+                    else:
+                        msg = '\nObject already exists. Try listing the current objects instead.'
+                        self.send_encrypted(s, msg, self.get_just_name(s))
+                        return
+                else:
+                    msg = '''
+Error: add only accepts 1 argument
+Usage:
+add:     Add an object named [name] to the session (add [name])
+'''
+                    # Send to self
+                    self.send_encrypted(s, msg, self.get_just_name(s))
+                    return
+                    
+            elif cmd[0].lower() == 'list':
+                if len(cmd) == 2:
+                    msg = ''
+                    for name,ob in self.objects.iteritems():
+                        msg += '\n%s:\n' % (name)
+                        msg += 'Locked: %s\n' % (str(ob.locked))
+                        msg += 'Notes: %s\n' % (ob.notes)
+                        msg += 'Flag: %s' % (ob.flag)
+                        
+                    # Send to self
+                    self.send_encrypted(s, msg, self.get_just_name(s))
+                    return    
+            else:
+                # Unrecognized command
+                self.print_help(s)
+                return
+            
 
     def serve(self):
         inputs = [self.server, sys.stdin]
@@ -144,23 +254,16 @@ class ChatServer(object):
                             data = dataparts[0]
 
                             verified = self.verify_signature(s, data, signature)
-                            data = self.server_privkey.decrypt(data)
+                            data = self.server_privkey.decrypt(data) # Server can decide parsing here
 
                             if data != '\x00':
                                 if verified:
                                     data = '%s [OK]' % data
-
+				    
                                 else:
                                     data = '%s [Not verified]' % data
-
-                                # Send as new client's message...
-                                msg = '\n# [' + self.getname(s) + ']>> ' + data
-
-                                # Send data to all except ourselves
-
-                                for o in self.outputs:
-                                    if o != s:
-                                        self.send_encrypted(o, msg, self.get_just_name(s))
+				
+				self.process(data, s) # parse out server-side commands or send as-is
 
                         else:
 
@@ -181,7 +284,7 @@ class ChatServer(object):
                         inputs.remove(s)
                         self.outputs.remove(s)
 
-            sleep(0.1)
+            sleep(0.1) # Don't kill the main thread!
 
         self.server.close()
 
