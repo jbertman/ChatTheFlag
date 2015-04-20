@@ -1,4 +1,4 @@
-A fork of lunemec's Python chatroom with RSA key authentication - designed for use in team-based CTFs using object-oriented paradigms
+Encrypted Python chatroom for use in team-based CTFs using object-oriented paradigms
 =====================================================
 
 About
