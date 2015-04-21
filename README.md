@@ -58,4 +58,4 @@ Object already exists. Try listing the current objects instead.
 [user2@127.0.0.1]> !note challenge_1 "A note!"
 [user2@127.0.0.1]> Cannot add note to challenge_1. This object is locked by jbertman.
 ```
-TODO: Prevent duplicate users (https://github.com/jbertman/ChatTheFlag/issues/1), add note removal, and unlock requests
+TODO: Prevent duplicate users (https://github.com/jbertman/ChatTheFlag/issues/1), add password protection, note removal, and unlock requests
