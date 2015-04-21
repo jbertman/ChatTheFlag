@@ -1,4 +1,4 @@
-Encrypted Python chatroom for use in team-based CTFs using object-oriented paradigms
+ChatTheFlag
 =====================================================
 
 About
