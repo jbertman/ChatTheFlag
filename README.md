@@ -24,35 +24,38 @@ For clients:
 Usage:
 ------
 Clients can use the "!" symbol to run server-side commands. Run !help to see available commands:
-    [jbertman@127.0.0.1]> !help
-    Available commands:
-    
-    help:    Show this help message
-    add:     Add an object named [name] to the session (add [name])
-    list:    List all objects and their attributes
-    lock:    Lock object with name [name] (lock [name])
-    release: Release lock on object with name [name] (release [name])
-    note:    Add note "[note]" to object with name [name] (note [name] "[note]")
-    flag:    Add flag "[flag]" to object with name [name] (flag [name] "[flag]")
+```
+[jbertman@127.0.0.1]> !help
+Available commands:
 
+help:    Show this help message
+add:     Add an object named [name] to the session (add [name])
+list:    List all objects and their attributes
+lock:    Lock object with name [name] (lock [name])
+release: Release lock on object with name [name] (release [name])
+note:    Add note "[note]" to object with name [name] (note [name] "[note]")
+flag:    Add flag "[flag]" to object with name [name] (flag [name] "[flag]")
+```
 An example of adding challenges, locking them, and adding a flag
-    [jbertman@127.0.0.1]> !add challenge_1
-    [jbertman@127.0.0.1]> !lock challenge_1
-    challenge_1 has been acquired by jbertman.
-    [jbertman@127.0.0.1]> !flag challenge_1 "{A_FLAG}"
-    A flag has been added to challenge_1.
-    [jbertman@127.0.0.1]> !list
-    Object "challenge_1":
-    Locked: ('jbertman', True)
-    Notes: 
-    Flag: {A_FLAG}
-
+```
+[jbertman@127.0.0.1]> !add challenge_1
+[jbertman@127.0.0.1]> !lock challenge_1
+challenge_1 has been acquired by jbertman.
+[jbertman@127.0.0.1]> !flag challenge_1 "{A_FLAG}"
+A flag has been added to challenge_1.
+[jbertman@127.0.0.1]> !list
+Object "challenge_1":
+Locked: ('jbertman', True)
+Notes: 
+Flag: {A_FLAG}
+```
 Another user connecting and trying operations on the previously locked objects
-    python client.py user2 127.0.0.1 8000
-    Connected to chat server 127.0.0.1:8000
-    [user2@127.0.0.1]> !add challenge_1
-    Object already exists. Try listing the current objects instead.
-    [user2@127.0.0.1]> !note challenge_1 "A note!"
-    [user2@127.0.0.1]> Cannot add note to challenge_1. This object is locked by jbertman.
-
-TODO: (Prevent duplicate users)[https://github.com/jbertman/ChatTheFlag/issues/1], add note removal, and unlock requests
+```
+python client.py user2 127.0.0.1 8000
+Connected to chat server 127.0.0.1:8000
+[user2@127.0.0.1]> !add challenge_1
+Object already exists. Try listing the current objects instead.
+[user2@127.0.0.1]> !note challenge_1 "A note!"
+[user2@127.0.0.1]> Cannot add note to challenge_1. This object is locked by jbertman.
+```
+TODO: Prevent duplicate users (https://github.com/jbertman/ChatTheFlag/issues/1), add note removal, and unlock requests
