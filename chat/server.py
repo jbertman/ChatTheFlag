@@ -5,6 +5,7 @@ import select
 import socket
 import sys
 import signal
+import shlex
 from time import sleep
 
 from Crypto.PublicKey import RSA
@@ -26,12 +27,11 @@ class CTFObject(object):
 
     def acquire(self, locker):
         # Not locked yet, acquire it
-        if not is_locked(self):
-            self.locked[0] = locker
-            self.locked[1] = True
+        if not self.is_locked():
+            self.locked = (locker, True)
             return '%s has been acquired by %s.' % (self.name, locker)
 
-        elif is_locked(self):
+        elif self.is_locked():
             # Already locked
             return '%s is already locked by %s.' % (self.name, self.locked[0])
         else:
@@ -39,18 +39,53 @@ class CTFObject(object):
 
     def release(self, requester):
         # Locked, are you the person that locked it?
-        if is_locked(self) and requester == self.locked[0]:
+        if self.is_locked() and requester == self.locked[0]:
             # Unlock it
-            self.locked[0] = None
-            self.locked[1] = False
+            self.locked = (None, False)
             return '%s has been released by %s.' % (self.name, requester)
         
-        elif is_locked(self) and requester != self.locked[0]:
+        elif self.is_locked() and requester != self.locked[0]:
             # Locker and unlocker are not the same person
             return 'Cannot unlock %s. Already locked by %s.' % (self.name, self.locked[0])
             
         else:
             return 'Cannot unlock %s. This object is not locked or does not exist.' % (self.name)
+
+    def note(self, content, requester):
+        # If it's locked, are you the locker?
+        if self.is_locked() and requester == self.locked[0]:
+            # Add the note
+            self.notes.append(content)
+            return 'A note has been added to %s.' % (self.name)
+        
+        elif self.is_locked() and requester != self.locked[0]:
+            return 'Cannot add note to %s. This object is locked by %s.' % (self.name, self.locked[0])
+
+        elif not self.is_locked():
+            # Add the note
+            self.notes.append(content)
+            return 'A note has been added to %s.' % (self.name)
+
+        else:
+            return 'Cannot add note to %s. This object does not exist.' % (self.name)
+        
+    def set_flag(self, content, requester):
+        # If it's locked, are you the locker?
+        if self.is_locked() and requester == self.locked[0]:
+            # Add the flag
+            self.flag = content
+            return 'A flag has been added to %s.' % (self.name)
+        
+        elif self.is_locked() and requester != self.locked[0]:
+            return 'Cannot add flag to %s. This object is locked by %s.' % (self.name, self.locked[0])
+
+        elif not self.is_locked():
+            # Add the flag
+            self.flag = content
+            return 'A flag has been added to %s.' % (self.name)
+
+        else:
+            return 'Cannot add flag to %s. This object does not exist.' % (self.name)
             
 
 class ChatServer(object):
@@ -128,7 +163,10 @@ Available commands:
 help:    Show this help message
 add:     Add an object named [name] to the session (add [name])
 list:    List all objects and their attributes
-
+lock:    Lock object with name [name] (lock [name])
+release: Release lock on object with name [name] (release [name])
+note:    Add note "[note]" to object with name [name] (note [name] "[note]")
+flag:    Add flag "[flag]" to object with name [name] (flag [name] "[flag]")
 '''
         # Send help only to self
         self.send_encrypted(s, msg, self.get_just_name(s))
@@ -146,7 +184,13 @@ list:    List all objects and their attributes
         
         else:
             # Server-side command
-            cmd = data[1:].split(' ')
+            try:
+                cmd = shlex.split(data[1:])
+            except ValueError, e:
+                msg = 'Error: %s' % (str(e))
+                self.send_encrypted(s, msg, self.get_just_name(s))
+                return
+            
             if cmd[0].lower() == 'help':
                 self.print_help(s)
                 return
@@ -166,24 +210,163 @@ list:    List all objects and their attributes
                     msg = '''
 Error: add only accepts 1 argument
 Usage:
-add:     Add an object named [name] to the session (add [name])
+list:     List all objects and their attributes
 '''
                     # Send to self
                     self.send_encrypted(s, msg, self.get_just_name(s))
                     return
                     
             elif cmd[0].lower() == 'list':
+                # Doesn't take any args
                 if len(cmd) == 2:
                     msg = ''
                     for name,ob in self.objects.iteritems():
-                        msg += '\n%s:\n' % (name)
+                        msg += '\nObject "%s":\n' % (name)
                         msg += 'Locked: %s\n' % (str(ob.locked))
-                        msg += 'Notes: %s\n' % (ob.notes)
-                        msg += 'Flag: %s' % (ob.flag)
+                        msg += 'Notes: %s\n' % ('; '.join(ob.notes))
+                        msg += 'Flag: %s\n' % (ob.flag)
                         
                     # Send to self
                     self.send_encrypted(s, msg, self.get_just_name(s))
-                    return    
+                    return
+                
+                else:
+                    msg = '''
+Error: list does not accept any arguments
+Usage:
+list:     Add an object named [name] to the session (add [name])
+'''
+                    # Send to self
+                    self.send_encrypted(s, msg, self.get_just_name(s))
+                    return
+
+            elif cmd[0].lower() == 'lock':
+                # Takes one arg
+                if len(cmd) == 3:
+                    if cmd[1] in self.objects:
+                        msg = self.objects[cmd[1]].acquire(self.get_just_name(s))
+                        if 'is already locked' in msg:
+                            # Send to self
+                            self.send_encrypted(s, msg, self.get_just_name(s))
+                            return
+                        else:                         
+                            # Send data to all
+                            for o in self.outputs:
+                                self.send_encrypted(o, msg, self.get_just_name(s))
+                            return
+
+                    else:
+                        msg = '''
+Error: object does not exist
+Usage:
+lock:     Lock object with name [name] (lock [name])
+'''
+                        # Send to self
+                        self.send_encrypted(s, msg, self.get_just_name(s))
+                        return
+                        
+                else:
+                    msg = '''
+Error: lock only accepts one argument
+Usage:
+lock:     Lock object with name [name] (lock [name])
+'''                 # Send to self
+                    self.send_encrypted(s, msg, self.get_just_name(s))
+                    return   
+
+            elif cmd[0].lower() == 'release':
+                # Takes one arg
+                if len(cmd) == 3:
+                    if cmd[1] in self.objects:
+                        msg = self.objects[cmd[1]].release(self.get_just_name(s))
+                        if 'Cannot unlock' in msg:
+                            # Send to self
+                            self.send_encrypted(s, msg, self.get_just_name(s))
+                            return
+                        else:
+                            # Send data to all
+                            for o in self.outputs:
+                                self.send_encrypted(o, msg, self.get_just_name(s))
+                            return
+                    else:
+                        msg = '''
+Error: object does not exist
+Usage:
+release:     Release object with name [name] (release [name])
+'''
+                        # Send to self
+                        self.send_encrypted(s, msg, self.get_just_name(s))
+                        return
+                else:
+                    msg = '''
+Error: release only accepts one argument
+Usage:
+release:     Release object with name [name] (release [name])
+'''                 # Send to self
+                    self.send_encrypted(s, msg, self.get_just_name(s))
+                    return
+                
+            elif cmd[0].lower() == 'note':
+                # Takes two args
+                if len(cmd) == 4:
+                    if cmd[1] in self.objects:
+                        msg = self.objects[cmd[1]].note(cmd[2], self.get_just_name(s))
+                        # Send to self
+                        self.send_encrypted(s, msg, self.get_just_name(s))
+                        return
+                    else:
+                        msg = '''
+Error: object does not exist
+Usage:
+note:     Add note "[note]" to object with name [name] (note [name] "[note]")
+'''
+                        # Send to self
+                        self.send_encrypted(s, msg, self.get_just_name(s))
+                        return
+                else:
+                    msg = '''
+Error: note only accepts two arguments
+Usage:
+note:     Add note "[note]" to object with name [name] (note [name] "[note]")
+'''
+                    # Send to self
+                    self.send_encrypted(s, msg, self.get_just_name(s))
+                    return
+
+            elif cmd[0].lower() == 'flag':
+                # Takes two args
+                if len(cmd) == 4:
+                    if cmd[1] in self.objects:
+                        msg = self.objects[cmd[1]].set_flag(cmd[2], self.get_just_name(s))
+                        if 'has been added' in msg:
+                            # Send data to all
+                            for o in self.outputs:
+                                self.send_encrypted(o, msg, self.get_just_name(s))
+                            return
+                        else:
+                            # Send to self
+                            self.send_encrypted(s, msg, self.get_just_name(s))
+                            return
+                
+                    else:
+                        msg = '''
+Error: object does not exist
+Usage:
+flag:     Add flag "[flag]" to object with name [name] (flag [name] "[flag]")
+'''
+                        # Send to self
+                        self.send_encrypted(s, msg, self.get_just_name(s))
+                        return
+                else:
+                    msg = '''
+Error: flag only accepts two arguments
+Usage:
+flag:     Add flag "[flag]" to object with name [name] (flag [name] "[flag]")
+'''
+                    # Send to self
+                    self.send_encrypted(s, msg, self.get_just_name(s))
+                    return
+                        
             else:
                 # Unrecognized command
                 self.print_help(s)
@@ -217,12 +400,15 @@ add:     Add an object named [name] to the session (add [name])
 
                     # Read the login name
                     cname = receive(client).split('NAME: ')[1]
-
+                    for s, val in self.clientmap.iteritems():
+                        if cname in [str(i) for i in val]: # Have to convert each one to prevent a __getstate__ error
+                            continue # Want to abort the connection here!
+                           
                     # Compute client name and send back
                     self.clients += 1
                     send(client, 'CLIENT: ' + str(address[0]))
                     inputs.append(client)
-
+                    
                     self.clientmap[client] = (address, cname, pubkey)
 
                     # Send joining information to other clients
